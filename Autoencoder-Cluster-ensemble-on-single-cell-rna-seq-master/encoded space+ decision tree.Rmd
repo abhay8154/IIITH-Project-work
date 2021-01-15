@@ -1,0 +1,334 @@
+---
+title: "decision tree on pbmc"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r,include=FALSE}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+```
+
+```{r}
+pbmc.data<-Read10X(data.dir="/filtered_gene_bc_matrices/hg19")
+```
+```{r}
+pbmc<-CreateSeuratObject(counts=pbmc.data,project = "pbmc3k",min.cells =3 ,min.features = 200)
+pbmc
+```
+```{r}
+pbmc[["percent.mt"]]<- PercentageFeatureSet(pbmc,pattern="^MT-")
+```
+
+**QC metrics are stored in meta.data**
+
+```{r}
+head(pbmc@meta.data)
+```
+```{r}
+summary(pbmc@meta.data$nFeature_RNA)
+```
+```{r}
+hist(pbmc@meta.data$nFeature_RNA,breaks=100)
+abline(v=2500,col="red")
+abline(v=200,col="blue")
+#We filter cells that have unique feature counts over 2,500 or less than 200
+```
+
+```{r}
+summary(pbmc@meta.data$nCount_RNA)
+```
+```{r}
+hist(pbmc@meta.data$nCount_RNA,breaks=100)
+```
+```{r}
+summary(pbmc@meta.data$percent.mt)
+```
+```{r}
+hist(pbmc@meta.data$percent.mt,breaks=100)
+abline(v=5,col="red")
+#We filter cells that have >5% mitochondrial counts
+```
+**Violin Plot of QC metrics**
+
+```{r}
+VlnPlot(pbmc,features = c("nCount_RNA","nFeature_RNA","percent.mt"),ncol=3)
+```
+**High positive correlation b/w nCount_RNA & nFeature_RNA**
+```{r}
+plot1<-FeatureScatter(pbmc,feature="nCount_RNA",feature2 = "percent.mt")
+plot2<-FeatureScatter(pbmc,feature1="nCount_RNA",feature2 = "nFeature_RNA")
+plot1+plot2
+```
+```{r}
+plot3<-FeatureScatter(pbmc,feature1 = "nFeature_RNA",feature2 = "percent.mt")
+plot3
+```
+**Filtering of cells by removing outliers**
+
+```{r}
+pbmc<-subset(pbmc,subset=nFeature_RNA>200 & nFeature_RNA<2500 & percent.mt<5)
+```
+
+**Normalizing the data**
+
+```{r}
+pbmc<-NormalizeData(pbmc,normalization.method = "LogNormalize",scale.factor = 10000)
+#normalized data is stored in data slot of "RNA"
+```
+**Identification of highly variable features (feature selection)**
+
+```{r}
+#focusing on highly variable genes (that exhibit high cell to cell variation) in downstream analysis helps in detection of biological signal 
+pbmc<-FindVariableFeatures(pbmc,selection.method = "vst",nfeatures = 2000)
+pbmc
+
+```
+**Plot variable features**
+```{r}
+top10<-head(VariableFeatures(pbmc),10)
+plot1<-VariableFeaturePlot(pbmc)
+plot2<-LabelPoints(plot=plot1,points=top10,repel=TRUE)
+plot1
+```
+
+```{r}
+plot2
+```
+**Scaling the data**
+
+```{r}
+#Shifts the expression of each gene, so that the mean expression across cells is 0
+
+#Scales the expression of each gene, so that the variance across cells is 1
+
+all.genes<-rownames(pbmc)
+pbmc<-ScaleData(pbmc,features = all.genes)
+```
+
+```{r}
+x<-pbmc@assays$RNA@var.features #filters variable feature/gene names from pbmc dataset
+pbmc_counts<-pbmc[["RNA"]]@data #filters counts from pbmc dataset
+pbmc_counts<-pbmc_counts[x,] #To subset only variable features from pbmc_counts
+pbmc_counts<-as.matrix(pbmc_counts) #explicit conversion to matrix
+pbmc_dat<-t(pbmc_counts)
+```
+
+```{r}
+# Autoencoder model implementation in keras
+
+library("keras")
+library("clue")
+library("parallel")
+```
+
+
+```{r}
+encode = function(dat, seed = 1, max_random_projection = 2048, encoded_dim = 16, hidden_dims = c(128), learning_rate = 0.001, batch_size = 32, epochs = 100, verbose = 2, scale = FALSE, genes_as_rows = FALSE) {
+  if (verbose[1] %in% 0:2) {
+    verbose = verbose[1]
+  } else {
+    verbose = 1
+  }
+  
+  set.seed(seed)
+  was_data_frame = is.data.frame(dat)
+  if (was_data_frame) dat = as.matrix(dat)
+  if (class(dat) != "matrix") stop("Input data must be dataframe or matrix.")
+  
+  # Transpose
+  if (genes_as_rows) dat = t(dat)
+  
+  # Strip row and column names
+  datrows = rownames(dat)
+  rownames(dat) = NULL
+  colnames(dat) = NULL
+  
+  # Scale columns
+  if (scale) {
+    dat = apply(dat, 2, function(x) (x - mean(x)) / sd(x))
+  }
+  
+  # Perform random projection
+  num_input_features = ncol(dat)
+  final_proj_dim = min(max_random_projection, ceiling(0.8 * num_input_features))
+  random_proj_cols = sample(num_input_features, size = final_proj_dim, replace = FALSE)
+  dat = dat[, random_proj_cols]
+  
+  # Clear deep learning graph
+  keras::k_clear_session()
+  
+  # Construct encoder network
+  tns = encoder_input = keras::layer_input(shape = final_proj_dim)
+  for (layer_width in hidden_dims) {
+    tns = keras::layer_dense(tns, units = layer_width)
+    tns = keras::layer_activation_leaky_relu(tns, alpha = 0.01)
+  }
+  tns = keras::layer_dense(tns, units = encoded_dim)
+  encoder = keras::keras_model(inputs = encoder_input, outputs = tns)
+  
+  # Construct decoder network
+  tns = decoder_input = keras::layer_input(shape = encoded_dim)
+  
+  for (layer_width in rev(hidden_dims)) {
+    tns = keras::layer_dense(tns, units = layer_width)
+    tns = keras::layer_activation_leaky_relu(tns, alpha = 0.01)
+  }
+  
+  tns = keras::layer_dense(tns, units = final_proj_dim)
+  decoder = keras::keras_model(inputs = decoder_input, outputs = tns)
+  
+  # Combine networks
+  tns = ae_input = keras::layer_input(final_proj_dim)
+  tns = decoder(encoder(tns))
+  autoencoder = keras::keras_model(inputs = ae_input, outputs = tns)
+  keras::compile(autoencoder, optimizer = keras::optimizer_adam(lr = learning_rate), loss = 'mean_squared_error')
+  
+  # Fit autoencoder model
+  keras::fit(autoencoder, dat, dat, batch_size = batch_size, epochs = epochs, verbose = verbose)
+  
+  # Encode input data, return rownames and return as original data type
+  reduced_data = predict(encoder, dat, batch_size = batch_size)
+  rownames(reduced_data) = datrows
+  # if (genes_as_rows) reduced_data %<>% t
+  if (was_data_frame) reduced_data = as.data.frame(reduced_data)
+  
+  return(reduced_data)
+}
+e_output<-encode(pbmc_dat)
+
+```
+
+
+
+```{r}
+# Classification
+
+library(rpart)
+library(caTools)
+library(caret)
+library(rpart.plot)
+library(e1071)
+```
+
+```{r}
+labels_10<-read.csv("clusters_9.csv",row.names = 1)
+x<-colnames(pbmc)
+labels_10<-labels_10[x,]
+```
+
+
+```{r}
+labels_10<-as.matrix(labels_10)
+hist(labels_10)  # labels_10 include ground truth labels of pbmc dataset
+```
+
+
+```{r}
+data<-cbind(e_output,labels_10)  #matrix having the labels of pbmc data along with encoded latent spcae output
+```
+
+
+```{r}
+data_df<-as.data.frame(data)    
+data_df$V17<-as.factor(data_df$V17)  # convert the labels to factors from numeric
+```
+
+
+```{r}
+trainIndex <- createDataPartition(data_df$V17, p=0.80, list=FALSE)  # split into 80% train and 20% test 
+dataTrain <- data_df[ trainIndex,]  # train data
+dataTest <- data_df[-trainIndex,]    # test data
+```
+
+
+```{r}
+tree = rpart(V17~., data = dataTrain, method = "class")  # fit the decision tree model
+```
+
+
+```{r}
+plot(tree, uniform=TRUE,
+     main="Classification Tree")
+text(tree, use.n=TRUE, all=TRUE, cex=.8)
+```
+
+
+```{r}
+rpart.plot(tree,type=4,extra=101,fallen.leaves=TRUE,tweak = 2,under = FALSE,nn=TRUE,gap=3.5)
+```
+
+
+```{r}
+p<-predict(tree,dataTest,type="class")
+
+table_pbmc<-table(dataTest[,17],p)
+table_pbmc
+```
+
+**Confusion matrix**
+
+```{r}
+confusionMatrix(table_pbmc)
+```
+
+**sumarry of the decision tree model**
+
+```{r}
+summary(tree)
+
+```
+**k fold cross validation**
+
+```{r}
+set.seed(123)
+trainControl<-trainControl(method="cv",number=10)
+fit_k<-train(V17~.,data=data_df,trControl=trainControl,method="rpart")
+fit_k
+```
+```{r}
+set.seed(123)
+trainControl <- trainControl(method="cv", number=5, classProbs=TRUE,
+summaryFunction=mnLogLoss)
+fit <- train(V17~., data=data_df, method="rpart", metric="logLoss", trControl=trainControl)
+fit
+
+```
+**Repeated k-fold Cross Validation**
+
+```{r}
+set.seed(123)
+trainControl<-trainControl(method="repeatedcv",number=10,repeats=9)
+fit_r<-train(V17~.,data=data_df,trControl=trainControl,method="rpart")
+fit_r
+
+```
+
+```{r}
+plot(fit_r)
+```
+**Leave-One-Out Cross-Validation**
+
+```{r}
+set.seed(123)
+trainControl<-trainControl(method="LOOCV")
+fit_l<-train(V17~.,data=data_df,trControl=trainControl,method="rpart")
+fit_l
+```
+```{r}
+plot(fit_l)
+```
+```{python}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+```
+
+

@@ -1,0 +1,5 @@
+
+DRA_2020-08-0623:37:13.526383_Zeisel_b_128_g_512__d_512__sig_sparse_lr_0.0007_b1_0.9_leak_0.2_keep_0.9_z_10_normal_bn_True_lam_1.0_giter_2_epoch_200, NMI = 0.7468109783346648
+DRA_2020-08-0623:48:30.856639_Zeisel_b_128_g_512__d_512__sig_sparse_lr_0.0007_b1_0.9_leak_0.2_keep_0.9_z_20_normal_bn_True_lam_1.0_giter_2_epoch_200, NMI = 0.7152914351955182
+DRA_2020-08-0900:33:37.191082_Zeisel_b_128_g_512,512,512,512__d_32,32,32,32__sig_sparse_lr_0.0001_b1_0.9_leak_0.2_keep_0.9_z_2_normal_bn_True_lam_1.0_giter_2_epoch_200, NMI = 0.4640370547460792
+DRA_2020-08-1121:44:36.854714_Zeisel_b_128_g_512__d_512__sig_sparse_lr_0.0007_b1_0.9_leak_0.2_keep_0.9_z_10_normal_bn_True_lam_1.0_giter_2_epoch_200, NMI = 0.7520746011074312
