@@ -19,14 +19,6 @@ This software contains these codes:
 - python
 - tensorflow
 
-**Implement and Activate Tensorflow Environment under Conda**
-
-- Implement:
-conda create -n tensorflow_env tensorflow
-
-- Activation:
-conda activate tensorflow_env
-
 **Use the software**
 
 **1. Data format:** filename.mat file
