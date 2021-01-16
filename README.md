@@ -11,3 +11,9 @@
 |-- expression_saliency
 |   |--
 ```
+
+## Note:
+```bash 
+All the code files along with the datasets can alternatively be accessed through this drive link
+```
+https://drive.google.com/drive/folders/1ivP23R2PMAyrSgnCfiDPULuODd8qlUD6
