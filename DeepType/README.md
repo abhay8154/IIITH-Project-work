@@ -73,7 +73,7 @@ This software contains these codes:
 
 Due to the file size limit of Github, the breast cancer dataset is available at https://drive.google.com/file/d/1ao1zu3DS8GkYF-tHxpQ-1ev2psxXL-fx/view?usp=sharing
 
+**6. References**
 
-
-
+[Deep-learning approach to identifying cancer subtypes using high-dimensional genomic data](https://academic.oup.com/bioinformatics/article-abstract/36/5/1476/5585742?redirectedFrom=fulltext)
 
